@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_KEY
-const COINGECKO_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'
+const BINANCE_URL = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
 const INTERVAL_MS = 10_000 // 10 seconds
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -15,10 +15,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 let lastPrice = null
 
 async function fetchBtcPrice() {
-  const res = await fetch(COINGECKO_URL)
-  if (!res.ok) throw new Error(`CoinGecko responded with ${res.status}`)
+  const res = await fetch(BINANCE_URL)
+  if (!res.ok) throw new Error(`Binance responded with ${res.status}`)
   const data = await res.json()
-  return data.bitcoin.usd
+  return parseFloat(data.price)
 }
 
 async function getLastStoredPrice() {
@@ -28,7 +28,7 @@ async function getLastStoredPrice() {
     .order('id', { ascending: false })
     .limit(1)
     .single()
-  if (error && error.code !== 'PGRST116') throw error // PGRST116 = no rows
+  if (error && error.code !== 'PGRST116') throw error
   return data ? parseFloat(data.price_usd) : null
 }
 
@@ -36,15 +36,13 @@ async function fetchAndStore() {
   try {
     const price = await fetchBtcPrice()
 
-    // On first run, seed lastPrice from DB (so restarts don't lose continuity)
     if (lastPrice === null) {
       lastPrice = await getLastStoredPrice()
     }
 
-    // If still null (empty table), just record the price with no outcome yet
     if (lastPrice === null) {
       lastPrice = price
-      console.log(`${ts()} | First price recorded: $${fmt(price)} — waiting for next tick to determine outcome`)
+      console.log(`${ts()} | First price recorded: $${fmt(price)} — waiting for next tick`)
       return
     }
 
@@ -67,13 +65,8 @@ async function fetchAndStore() {
   }
 }
 
-function ts() {
-  return new Date().toISOString()
-}
-
-function fmt(n) {
-  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+function ts() { return new Date().toISOString() }
+function fmt(n) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
 console.log('BTC Baccarat worker started. Fetching every 10 seconds...')
 fetchAndStore()
