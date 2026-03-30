@@ -65,9 +65,33 @@ async function fetchAndStore() {
   }
 }
 
-function ts() { return new Date().toISOString() }
-function fmt(n) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function ts() {
+  return new Date().toISOString()
+}
 
-console.log('BTC Baccarat worker started. Fetching every 10 seconds...')
-fetchAndStore()
-setInterval(fetchAndStore, INTERVAL_MS)
+function fmt(n) {
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Calculate ms until the next :x6 second mark (:06, :16, :26, :36, :46, :56)
+function msUntilNextTick() {
+  const now = new Date()
+  const posInCycle = (now.getSeconds() * 1000 + now.getMilliseconds()) % 10_000
+  const target = 6_000
+  let delay = target - posInCycle
+  if (delay <= 0) delay += 10_000
+  return delay
+}
+
+function startAligned() {
+  const delay = msUntilNextTick()
+  const alignsAt = new Date(Date.now() + delay)
+  console.log(`BTC Baccarat worker started. Aligning to :${String(alignsAt.getSeconds()).padStart(2, '0')} tick in ${(delay / 1000).toFixed(2)}s...`)
+
+  setTimeout(() => {
+    fetchAndStore()
+    setInterval(fetchAndStore, INTERVAL_MS)
+  }, delay)
+}
+
+startAligned()
