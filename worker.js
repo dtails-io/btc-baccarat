@@ -13,6 +13,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 let lastPrice = null
+let lastInsertTime = 0  // epoch ms of last successful insert
 
 async function fetchBtcPrice() {
   const res = await fetch(COINBASE_URL)
@@ -24,25 +25,38 @@ async function fetchBtcPrice() {
 async function getLastStoredPrice() {
   const { data, error } = await supabase
     .from('btc_rounds')
-    .select('price_usd')
+    .select('price_usd, captured_at')
     .order('id', { ascending: false })
     .limit(1)
     .single()
   if (error && error.code !== 'PGRST116') throw error
+  if (data) {
+    // Seed the last insert time so we don't double-insert on restart
+    lastInsertTime = new Date(data.captured_at).getTime()
+  }
   return data ? parseFloat(data.price_usd) : null
 }
 
 async function fetchAndStore() {
   try {
     const price = await fetchBtcPrice()
+    const now = Date.now()
 
+    // Seed on first run
     if (lastPrice === null) {
       lastPrice = await getLastStoredPrice()
     }
 
     if (lastPrice === null) {
       lastPrice = price
-      console.log(`${ts()} | First price recorded: $${fmt(price)} — waiting for next tick`)
+      console.log(`${ts()} | First price: $${fmt(price)} — waiting for next tick`)
+      return
+    }
+
+    // Deduplication guard: skip if we already inserted within the last 5 seconds
+    // (protects against brief dual-deployment overlap during Railway redeploys)
+    if (now - lastInsertTime < 5_000) {
+      console.log(`${ts()} | Skipping — last insert was ${((now - lastInsertTime) / 1000).toFixed(1)}s ago`)
       return
     }
 
@@ -57,6 +71,7 @@ async function fetchAndStore() {
     } else {
       const arrow = outcome === 'player' ? '▲' : '▼'
       console.log(`${ts()} | $${fmt(price)} ${arrow} ${outcome.toUpperCase()} (prev: $${fmt(lastPrice)})`)
+      lastInsertTime = now
     }
 
     lastPrice = price
@@ -77,7 +92,7 @@ function fmt(n) {
 function msUntilNextTick() {
   const now = new Date()
   const posInCycle = (now.getSeconds() * 1000 + now.getMilliseconds()) % 10_000
-  const target = 6_000
+  const target = 6_000 // 6000ms into each 10-second cycle = :x6
   let delay = target - posInCycle
   if (delay <= 0) delay += 10_000
   return delay
@@ -90,7 +105,7 @@ function startAligned() {
 
   setTimeout(() => {
     fetchAndStore()
-    setInterval(fetchAndStore, INTERVAL_MS)
+    setInterval(fetchAndStore, INTERVAL_MS) // from here, exactly every 10s
   }, delay)
 }
 
