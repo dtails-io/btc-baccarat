@@ -1,0 +1,8 @@
+# Netlify config — frontend only, no build step
+[build]
+  command   = ""        # don't run any build command
+  publish   = "."       # serve files from root
+
+# Prevent Netlify from ever treating this as a Node.js app
+[build.environment]
+  NODE_VERSION = ""

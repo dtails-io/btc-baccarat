@@ -213,17 +213,6 @@
     }
 
     /* Each cell is positioned absolutely within a grid column */
-    .board-inner {
-      display: flex;
-      gap: 2px;
-      min-height: calc(6 * var(--cell) + 5 * 2px);
-    }
-
-    .board-col {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
 
     .cell {
       width: var(--cell);
@@ -343,6 +332,10 @@
         <span id="status-text">Connecting…</span>
       </span>
     </div>
+    <div class="stat-card" id="clock-card">
+      <span class="stat-label">Time</span>
+      <span id="clock-display" style="font-size:1.15rem; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:0.05em; color:var(--text); transition: color 0.1s, text-shadow 0.1s;">--:--:--</span>
+    </div>
   </div>
 </header>
 
@@ -389,85 +382,141 @@
   let rounds = []
 
   // ── Big Road Algorithm ───────────────────────────────────────────────────
-  // Returns a 2D array: columns[col][row] = { outcome, isNew }
-  function buildBigRoad(rounds) {
-    const columns = []  // array of columns, each column is an array of outcomes
-    let currentCol = []
-    let lastOutcome = null
+  // Builds a coordinate map: cells["col,row"] = { outcome, isTail, streakId }
+  // Dragon tail rules:
+  //   - When a column fills (row 5) and same outcome continues → go RIGHT
+  //   - If the row ABOVE the target cell is occupied → DROP DOWN one row (Strategy 1)
+  //   - Same-color adjacent tails get an extra right-shift (Strategy 2)
+  //   - Visual separator line marks where each tail begins (Strategy 4)
+  function buildBigRoad(rounds, maxRows = 6) {
+    const cells = {}
+    const has  = (c, r) => !!(cells[`${c},${r}`])
+    const get  = (c, r) => cells[`${c},${r}`] || null
+    const put  = (c, r, d) => { cells[`${c},${r}`] = d }
+
+    let col = 0, row = 0, maxCol = 0
+    let prevOutcome = null
+    let inTail = false
+    let tailRow = 0      // which row the current tail runs along
+    let streakId = 0
 
     for (let i = 0; i < rounds.length; i++) {
       const { outcome } = rounds[i]
-      const isNew = i === rounds.length - 1
 
-      if (lastOutcome === null) {
-        // First result ever
-        currentCol.push({ outcome, isNew })
-        lastOutcome = outcome
-      } else if (outcome === lastOutcome) {
-        // Same outcome: continue down the column or start rightward dragon tail
-        if (currentCol.length < MAX_ROWS) {
-          currentCol.push({ outcome, isNew })
+      if (prevOutcome === null) {
+        put(0, 0, { outcome, streakId })
+        col = 0; row = 0; maxCol = 0
+
+      } else if (outcome === prevOutcome) {
+        if (!inTail && row < maxRows - 1) {
+          // Normal downward fill
+          row++
+          put(col, row, { outcome, streakId })
+
         } else {
-          // Column full — start a new column (dragon continues at row MAX_ROWS)
-          columns.push(currentCol)
-          currentCol = [{ outcome, isNew }]
+          // Dragon tail — extend to the right
+          if (!inTail) {
+            inTail = true
+            tailRow = row
+          }
+
+          const nc = col + 1
+          let nr = tailRow
+
+          // Strategy 1: if the cell directly above our target is occupied, drop down
+          while (nr > 0 && has(nc, nr - 1)) {
+            nr++
+            if (nr >= maxRows) { nr = maxRows - 1; break }
+          }
+
+          // Strategy 2: same-color tail immediately above → skip one extra column right
+          // (detect: the previous streak's tail occupies (nc, nr) already)
+          if (has(nc, nr) && get(nc, nr).outcome === outcome) {
+            // Try one more column over
+            const nc2 = nc + 1
+            let nr2 = tailRow
+            while (nr2 > 0 && has(nc2, nr2 - 1)) {
+              nr2++
+              if (nr2 >= maxRows) { nr2 = maxRows - 1; break }
+            }
+            col = nc2; row = nr2; tailRow = nr2
+          } else {
+            col = nc; row = nr; tailRow = nr
+          }
+
+          maxCol = Math.max(maxCol, col)
+          const isFirstTailCell = (col === (maxCol) && !has(col - 1, row))
+          put(col, row, { outcome, streakId, isTail: true, tailStart: (row !== tailRow || col === maxCol) })
         }
+
       } else {
-        // Different outcome: new column
-        columns.push(currentCol)
-        currentCol = [{ outcome, isNew }]
-        lastOutcome = outcome
+        // New streak — new column
+        streakId++
+        inTail = false
+        col = maxCol + 1
+        row = 0
+        maxCol = col
+        put(col, row, { outcome, streakId })
       }
+
+      prevOutcome = outcome
     }
 
-    if (currentCol.length > 0) columns.push(currentCol)
-    return columns
+    return { cells, maxCol }
   }
 
-  // ── Rendering ────────────────────────────────────────────────────────────
+  // ── Rendering ─────────────────────────────────────────────────────────────
   function renderBoard(rounds) {
     const board = document.getElementById('board')
 
     if (rounds.length === 0) {
-      board.innerHTML = `<div class="loading" style="color: var(--text-dim)">Waiting for first Bitcoin price sample…</div>`
+      board.style.display = 'flex'
+      board.innerHTML = `<div class="loading" style="color:var(--text-dim)">Waiting for first Bitcoin price sample…</div>`
       return
     }
 
-    const columns = buildBigRoad(rounds)
+    const { cells, maxCol } = buildBigRoad(rounds, MAX_ROWS)
+    const numCols = Math.max(maxCol + 8, 24) // padding so board doesn't look cramped
 
-    // Build the inner grid
-    const inner = document.createElement('div')
-    inner.className = 'board-inner'
-
-    for (const col of columns) {
-      const colEl = document.createElement('div')
-      colEl.className = 'board-col'
-
-      for (let row = 0; row < MAX_ROWS; row++) {
-        const cell = document.createElement('div')
-        if (row < col.length) {
-          const { outcome, isNew } = col[row]
-          const label = outcome === 'player' ? 'P' : 'B'
-          cell.className = `cell ${outcome}${isNew ? ' new-entry' : ''}`
-          cell.innerHTML = `<div class="circle-inner">${label}</div>`
-          cell.title = outcome === 'player' ? 'Player (price went up)' : 'Banker (price went down)'
-        } else {
-          cell.className = 'cell empty'
-        }
-        colEl.appendChild(cell)
-      }
-
-      inner.appendChild(colEl)
-    }
-
+    // Switch board to CSS Grid
+    board.style.display = 'grid'
+    board.style.gridTemplateRows = `repeat(${MAX_ROWS}, var(--cell))`
+    board.style.gridTemplateColumns = `repeat(${numCols}, var(--cell))`
+    board.style.gap = '2px'
+    board.style.padding = '12px'
     board.innerHTML = ''
-    board.appendChild(inner)
 
-    // Scroll to the right to show latest results
-    const scroll = board.closest('.board-scroll')
-    if (scroll) {
-      requestAnimationFrame(() => { scroll.scrollLeft = scroll.scrollWidth })
+    let newestId = null
+    for (const key of Object.keys(cells)) newestId = key // last key inserted = newest
+
+    for (let r = 0; r < MAX_ROWS; r++) {
+      for (let c = 0; c < numCols; c++) {
+        const div = document.createElement('div')
+        const cell = cells[`${c},${r}`]
+        const isNewest = cell && `${c},${r}` === newestId
+
+        if (cell) {
+          const label = cell.outcome === 'player' ? 'P' : 'B'
+          div.className = `cell ${cell.outcome}${isNewest ? ' new-entry' : ''}`
+
+          // Dragon tail marker: thin left-border line inside the circle
+          const tailLine = cell.isTail
+            ? `<div style="position:absolute;left:4px;top:50%;transform:translateY(-50%);width:2px;height:60%;background:currentColor;opacity:0.5;border-radius:1px;"></div>`
+            : ''
+
+          div.style.position = 'relative'
+          div.innerHTML = `${tailLine}<div class="circle-inner">${label}</div>`
+          div.title = `${cell.outcome === 'player' ? 'Player ↑' : 'Banker ↓'}${cell.isTail ? ' [tail]' : ''}`
+        } else {
+          div.className = 'cell empty'
+        }
+        board.appendChild(div)
+      }
     }
+
+    // Scroll to show latest column
+    const scroll = board.closest('.board-scroll')
+    if (scroll) requestAnimationFrame(() => { scroll.scrollLeft = scroll.scrollWidth })
   }
 
   function updateStats(rounds) {
@@ -489,46 +538,82 @@
     document.getElementById('status-text').textContent = 'Live'
   }
 
-  // ── Load history from Supabase ────────────────────────────────────────────
-  async function loadHistory() {
-    const { data, error } = await db
-      .from('btc_rounds')
-      .select('*')
-      .order('id', { ascending: true })
+  // ── Live refresh — polls DB every 10 seconds, full authoritative replace ──
+  // No WebSocket / real-time channel — structurally impossible to double-count.
+  async function refresh() {
+    try {
+      const { data, error } = await db
+        .from('btc_rounds')
+        .select('*')
+        .order('id', { ascending: true })
 
-    if (error) {
-      console.error('Failed to load history:', error.message)
-      document.getElementById('status-text').textContent = 'Error loading data'
-      return
-    }
+      if (error) throw error
+      if (!data) return
 
-    rounds = data
-    renderBoard(rounds)
-    updateStats(rounds)
-  }
+      const isNew = data.length > rounds.length
+      rounds = data // full replace — always authoritative
 
-  // ── Subscribe to real-time new rows ──────────────────────────────────────
-  function subscribeToLive() {
-    db
-      .channel('btc_rounds_live')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'btc_rounds' }, payload => {
-        rounds.push(payload.new)
+      if (isNew || rounds.length === 0) {
         renderBoard(rounds)
         updateStats(rounds)
-      })
-      .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-          document.getElementById('status-text').textContent = 'Live'
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          document.getElementById('status-text').textContent = 'Reconnecting…'
-        }
-      })
+      }
+
+      document.getElementById('status-text').textContent = 'Live'
+    } catch (err) {
+      console.error('Refresh error:', err.message)
+      document.getElementById('status-text').textContent = 'Error'
+    }
   }
+
+  // ── Smart polling: burst-poll right after each :x6 tick mark ────────────
+  // Worker inserts at :x6.500-:x6.800. We poll at :x7 and :x8 to catch it
+  // within 1-2 seconds. A 30s fallback covers any missed real-time updates.
+  function msUntilPollFire() {
+    const now = new Date()
+    const posInCycle = (now.getSeconds() * 1000 + now.getMilliseconds()) % 10_000
+    const target = 7_000  // :x7:000 — 1 second after the :x6 tick
+    let delay = target - posInCycle
+    if (delay <= 0) delay += 10_000
+    return delay
+  }
+
+  function scheduleNextPoll() {
+    const delay = msUntilPollFire()
+    setTimeout(async () => {
+      await refresh()               // poll at :x7:000
+      setTimeout(refresh, 1000)     // poll again at :x8:000 (backup)
+      scheduleNextPoll()            // schedule the next :x7 poll
+    }, delay)
+  }
+
+  // ── Live clock — flashes gold at :x6 second marks ────────────────────────
+  function updateClock() {
+    const now = new Date()
+    const h  = String(now.getHours()).padStart(2, '0')
+    const m  = String(now.getMinutes()).padStart(2, '0')
+    const s  = String(now.getSeconds()).padStart(2, '0')
+    const ms = now.getMilliseconds()
+    const isTick = now.getSeconds() % 10 === 6 && ms < 800
+
+    const el = document.getElementById('clock-display')
+    el.textContent = `${h}:${m}:${s}`
+    if (isTick) {
+      el.style.color      = 'var(--gold)'
+      el.style.textShadow = '0 0 14px rgba(201,168,76,0.9)'
+    } else {
+      el.style.color      = 'var(--text)'
+      el.style.textShadow = 'none'
+    }
+  }
+
+  setInterval(updateClock, 100)
+  updateClock()
 
   // ── Boot ─────────────────────────────────────────────────────────────────
   ;(async () => {
-    await loadHistory()
-    subscribeToLive()
+    await refresh()                       // initial load
+    scheduleNextPoll()                    // aligned polls at :x7 + :x8
+    setInterval(refresh, 30_000)          // 30s fallback for resilience
   })()
 </script>
 </body>
