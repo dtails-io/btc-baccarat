@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_KEY
-const BINANCE_URL = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
+const COINBASE_URL = 'https://api.coinbase.com/v2/prices/BTC-USD/spot'
 const INTERVAL_MS = 10_000 // 10 seconds
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -15,10 +15,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 let lastPrice = null
 
 async function fetchBtcPrice() {
-  const res = await fetch(BINANCE_URL)
-  if (!res.ok) throw new Error(`Binance responded with ${res.status}`)
-  const data = await res.json()
-  return parseFloat(data.price)
+  const res = await fetch(COINBASE_URL)
+  if (!res.ok) throw new Error(`Coinbase responded with ${res.status}`)
+  const json = await res.json()
+  return parseFloat(json.data.amount)
 }
 
 async function getLastStoredPrice() {
