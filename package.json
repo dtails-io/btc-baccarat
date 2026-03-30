@@ -1,0 +1,15 @@
+{
+  "name": "btc-baccarat-worker",
+  "version": "1.0.0",
+  "description": "Bitcoin price ingester for BTC Baccarat scoreboard",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

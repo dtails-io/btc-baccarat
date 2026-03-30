@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTC Baccarat — Big Road</title>
+  <meta name="description" content="Live Bitcoin price baccarat scoreboard. Every 10 seconds, Bitcoin's price direction determines a Player or Banker result, displayed as a classic Big Road." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #07080f;
+      --surface: #0e1018;
+      --surface2: #161824;
+      --border: #252836;
+      --gold: #c9a84c;
+      --gold-dim: #7a6330;
+      --player: #3b82f6;
+      --player-bg: #1e3a5f;
+      --banker: #ef4444;
+      --banker-bg: #5f1e1e;
+      --text: #e8eaf0;
+      --text-dim: #6b7280;
+      --cell: 42px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Header ── */
+    header {
+      width: 100%;
+      max-width: 1200px;
+      padding: 28px 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: linear-gradient(135deg, var(--gold) 0%, #f5d98a 50%, var(--gold) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-weight: 300;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 130px;
+    }
+
+    .stat-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+    }
+
+    .stat-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .stat-value.price { color: var(--gold); }
+    .stat-value.player { color: var(--player); }
+    .stat-value.banker { color: var(--banker); }
+    .stat-value.neutral { color: var(--text); }
+
+    .live-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      margin-right: 6px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    .status-text {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    /* ── Big Road Board ── */
+    .board-wrapper {
+      width: 100%;
+      max-width: 1200px;
+      padding: 24px;
+      flex: 1;
+    }
+
+    .board-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .board-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--gold-dim);
+      font-weight: 600;
+    }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .legend-circle {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      font-weight: 700;
+    }
+
+    .legend-circle.player {
+      background: var(--player-bg);
+      border: 2px solid var(--player);
+      color: var(--player);
+    }
+
+    .legend-circle.banker {
+      background: var(--banker-bg);
+      border: 2px solid var(--banker);
+      color: var(--banker);
+    }
+
+    .board-scroll {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 8px;
+    }
+
+    .board-scroll::-webkit-scrollbar {
+      height: 4px;
+    }
+    .board-scroll::-webkit-scrollbar-track {
+      background: var(--surface);
+    }
+    .board-scroll::-webkit-scrollbar-thumb {
+      background: var(--gold-dim);
+      border-radius: 2px;
+    }
+
+    .board {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: inline-grid;
+      grid-template-rows: repeat(6, var(--cell));
+      gap: 2px;
+      min-width: 100%;
+    }
+
+    /* Each cell is positioned absolutely within a grid column */
+    .board-inner {
+      display: flex;
+      gap: 2px;
+      min-height: calc(6 * var(--cell) + 5 * 2px);
+    }
+
+    .board-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      position: relative;
+      transition: transform 0.15s ease;
+    }
+
+    .cell.empty {
+      background: transparent;
+    }
+
+    .cell.player {
+      background: var(--player-bg);
+      border: 2px solid var(--player);
+      color: var(--player);
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+    }
+
+    .cell.banker {
+      background: var(--banker-bg);
+      border: 2px solid var(--banker);
+      color: var(--banker);
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
+    }
+
+    .cell.new-entry {
+      animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes popIn {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .circle-inner {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+
+    /* ── Footer ── */
+    footer {
+      padding: 16px 24px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    /* ── Loading state ── */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      gap: 10px;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="title-row">
+    <h1>₿ BTC Baccarat</h1>
+    <span class="subtitle">Big Road</span>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <span class="stat-label">Bitcoin Price</span>
+      <span class="stat-value price" id="btc-price">—</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Player Wins ○</span>
+      <span class="stat-value player" id="player-count">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Banker Wins ×</span>
+      <span class="stat-value banker" id="banker-count">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Total Rounds</span>
+      <span class="stat-value neutral" id="total-count">0</span>
+    </div>
+    <div class="stat-card" style="margin-left: auto;">
+      <span class="stat-label">Status</span>
+      <span class="stat-value neutral" style="font-size: 0.85rem;">
+        <span class="live-dot"></span>
+        <span id="status-text">Connecting…</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<div class="board-wrapper">
+  <div class="board-header">
+    <span class="board-title">大路 · Big Road</span>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-circle player">P</div>
+        <span>Player (price ↑)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-circle banker">B</div>
+        <span>Banker (price ↓)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-scroll">
+    <div class="board" id="board">
+      <div class="loading">
+        <div class="spinner"></div>
+        Loading scoreboard…
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Bitcoin price sampled every ~10 seconds via CoinGecko · Up = Player · Down = Banker · Last updated: <span id="last-updated">—</span>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────
+  const SUPABASE_URL = 'https://nldtvjmdyasbmuzebpbd.supabase.co'
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sZHR2am1keWFzYm11emVicGJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4OTUxNTcsImV4cCI6MjA5MDQ3MTE1N30.WF7ZI7THiw-jFsDzVN2rnY1mMw4F0kDJRB5CnAQy1w0'
+  const MAX_ROWS = 6
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  const { createClient } = supabase
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+  let rounds = []
+
+  // ── Big Road Algorithm ───────────────────────────────────────────────────
+  // Returns a 2D array: columns[col][row] = { outcome, isNew }
+  function buildBigRoad(rounds) {
+    const columns = []  // array of columns, each column is an array of outcomes
+    let currentCol = []
+    let lastOutcome = null
+
+    for (let i = 0; i < rounds.length; i++) {
+      const { outcome } = rounds[i]
+      const isNew = i === rounds.length - 1
+
+      if (lastOutcome === null) {
+        // First result ever
+        currentCol.push({ outcome, isNew })
+        lastOutcome = outcome
+      } else if (outcome === lastOutcome) {
+        // Same outcome: continue down the column or start rightward dragon tail
+        if (currentCol.length < MAX_ROWS) {
+          currentCol.push({ outcome, isNew })
+        } else {
+          // Column full — start a new column (dragon continues at row MAX_ROWS)
+          columns.push(currentCol)
+          currentCol = [{ outcome, isNew }]
+        }
+      } else {
+        // Different outcome: new column
+        columns.push(currentCol)
+        currentCol = [{ outcome, isNew }]
+        lastOutcome = outcome
+      }
+    }
+
+    if (currentCol.length > 0) columns.push(currentCol)
+    return columns
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────────
+  function renderBoard(rounds) {
+    const board = document.getElementById('board')
+
+    if (rounds.length === 0) {
+      board.innerHTML = `<div class="loading" style="color: var(--text-dim)">Waiting for first Bitcoin price sample…</div>`
+      return
+    }
+
+    const columns = buildBigRoad(rounds)
+
+    // Build the inner grid
+    const inner = document.createElement('div')
+    inner.className = 'board-inner'
+
+    for (const col of columns) {
+      const colEl = document.createElement('div')
+      colEl.className = 'board-col'
+
+      for (let row = 0; row < MAX_ROWS; row++) {
+        const cell = document.createElement('div')
+        if (row < col.length) {
+          const { outcome, isNew } = col[row]
+          const label = outcome === 'player' ? 'P' : 'B'
+          cell.className = `cell ${outcome}${isNew ? ' new-entry' : ''}`
+          cell.innerHTML = `<div class="circle-inner">${label}</div>`
+          cell.title = outcome === 'player' ? 'Player (price went up)' : 'Banker (price went down)'
+        } else {
+          cell.className = 'cell empty'
+        }
+        colEl.appendChild(cell)
+      }
+
+      inner.appendChild(colEl)
+    }
+
+    board.innerHTML = ''
+    board.appendChild(inner)
+
+    // Scroll to the right to show latest results
+    const scroll = board.closest('.board-scroll')
+    if (scroll) {
+      requestAnimationFrame(() => { scroll.scrollLeft = scroll.scrollWidth })
+    }
+  }
+
+  function updateStats(rounds) {
+    const playerCount = rounds.filter(r => r.outcome === 'player').length
+    const bankerCount = rounds.filter(r => r.outcome === 'banker').length
+    const latest = rounds[rounds.length - 1]
+
+    document.getElementById('player-count').textContent = playerCount
+    document.getElementById('banker-count').textContent = bankerCount
+    document.getElementById('total-count').textContent = rounds.length
+
+    if (latest) {
+      const price = parseFloat(latest.price_usd)
+      document.getElementById('btc-price').textContent =
+        '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString()
+    document.getElementById('status-text').textContent = 'Live'
+  }
+
+  // ── Load history from Supabase ────────────────────────────────────────────
+  async function loadHistory() {
+    const { data, error } = await db
+      .from('btc_rounds')
+      .select('*')
+      .order('id', { ascending: true })
+
+    if (error) {
+      console.error('Failed to load history:', error.message)
+      document.getElementById('status-text').textContent = 'Error loading data'
+      return
+    }
+
+    rounds = data
+    renderBoard(rounds)
+    updateStats(rounds)
+  }
+
+  // ── Subscribe to real-time new rows ──────────────────────────────────────
+  function subscribeToLive() {
+    db
+      .channel('btc_rounds_live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'btc_rounds' }, payload => {
+        rounds.push(payload.new)
+        renderBoard(rounds)
+        updateStats(rounds)
+      })
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          document.getElementById('status-text').textContent = 'Live'
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          document.getElementById('status-text').textContent = 'Reconnecting…'
+        }
+      })
+  }
+
+  // ── Boot ─────────────────────────────────────────────────────────────────
+  ;(async () => {
+    await loadHistory()
+    subscribeToLive()
+  })()
+</script>
+</body>
+</html>
