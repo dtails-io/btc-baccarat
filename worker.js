@@ -92,21 +92,26 @@ function fmt(n) {
 function msUntilNextTick() {
   const now = new Date()
   const posInCycle = (now.getSeconds() * 1000 + now.getMilliseconds()) % 10_000
-  const target = 6_000 // 6000ms into each 10-second cycle = :x6
+  const target = 6_000
   let delay = target - posInCycle
   if (delay <= 0) delay += 10_000
   return delay
 }
 
 function startAligned() {
-  const delay = msUntilNextTick()
-  const alignsAt = new Date(Date.now() + delay)
-  console.log(`BTC Baccarat worker started. Aligning to :${String(alignsAt.getSeconds()).padStart(2, '0')} tick in ${(delay / 1000).toFixed(2)}s...`)
+  // Start the fetch PREFETCH_MS early so the HTTP round-trip + DB insert
+  // completes right at the :x6 mark rather than ~400ms after it
+  const PREFETCH_MS = 400
+  const rawDelay = msUntilNextTick() - PREFETCH_MS
+  const delay = rawDelay > 0 ? rawDelay : rawDelay + 10_000
+  const alignsAt = new Date(Date.now() + delay + PREFETCH_MS)
+  console.log(`BTC Baccarat worker started. Aiming for :${String(alignsAt.getSeconds()).padStart(2, '0')} tick, fetching in ${(delay / 1000).toFixed(2)}s...`)
 
   setTimeout(() => {
     fetchAndStore()
-    setInterval(fetchAndStore, INTERVAL_MS) // from here, exactly every 10s
+    setInterval(fetchAndStore, INTERVAL_MS)
   }, delay)
 }
 
 startAligned()
+
